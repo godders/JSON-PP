@@ -40,6 +40,8 @@ use constant P_AS_NONBLESSED        => 17;
 
 use constant P_ALLOW_UNKNOWN        => 18;
 
+use constant P_JS_COMPAT            => 19;
+
 use constant OLD_PERL => $] < 5.008 ? 1 : 0;
 
 BEGIN {
@@ -49,7 +51,7 @@ BEGIN {
     );
     my @pp_bit_properties = qw(
             allow_singlequote allow_bignum loose
-            allow_barekey escape_slash as_nonblessed
+            allow_barekey js_compat escape_slash as_nonblessed
     );
 
     # Perl version check, Unicode handling is enable?
@@ -92,7 +94,7 @@ BEGIN {
 my %encode_allow_method
      = map {($_ => 1)} qw/utf8 pretty allow_nonref latin1 self_encode escape_slash
                           allow_blessed convert_blessed indent indent_length allow_bignum
-                          as_nonblessed
+                          as_nonblessed js_compat
                         /;
 my %decode_allow_method
      = map {($_ => 1)} qw/utf8 allow_nonref loose allow_singlequote allow_bignum
@@ -251,6 +253,7 @@ sub allow_bigint {
     my $canonical;
     my $allow_blessed;
     my $convert_blessed;
+	my $js_compat;
 
     my $indent_length;
     my $escape_slash;
@@ -272,9 +275,9 @@ sub allow_bigint {
         my $idx = $self->{PROPS};
 
         ($ascii, $latin1, $utf8, $indent, $canonical, $space_before, $space_after, $allow_blessed,
-            $convert_blessed, $escape_slash, $bignum, $as_nonblessed)
+            $convert_blessed, $js_compat, $escape_slash, $bignum, $as_nonblessed)
          = @{$idx}[P_ASCII .. P_SPACE_AFTER, P_ALLOW_BLESSED, P_CONVERT_BLESSED,
-                    P_ESCAPE_SLASH, P_ALLOW_BIGNUM, P_AS_NONBLESSED];
+                    P_JS_COMPAT, P_ESCAPE_SLASH, P_ALLOW_BIGNUM, P_AS_NONBLESSED];
 
         ($max_depth, $indent_length) = @{$self}{qw/max_depth indent_length/};
 
@@ -468,6 +471,11 @@ sub allow_bigint {
         $arg =~ s/([\x22\x5c\n\r\t\f\b])/$esc{$1}/g;
         $arg =~ s/\//\\\//g if ($escape_slash);
         $arg =~ s/([\x00-\x08\x0b\x0e-\x1f])/'\\u00' . unpack('H2', $1)/eg;
+
+		if ($js_compat){
+			$arg =~ s/\N{U+2028}/\\u2028/g;
+			$arg =~ s/\N{U+2029}/\\u2029/g;
+		}
 
         if ($ascii) {
             $arg = JSON_PP_encode_ascii($arg);
@@ -2452,6 +2460,20 @@ According to JSON Grammar, I<slash> (U+002F) is escaped. But default
 JSON::PP (as same as JSON::XS) encodes strings without escaping slash.
 
 If C<$enable> is true (or missing), then C<encode> will escape slashes.
+
+=head2 js_compat
+
+    $json = $json->js_compat([$enable])
+
+U+2028 and U+2029 are considered line termination characters in
+JavaScript, but they're not automatically encoded in JSON. This means
+that JSON strings containing either of those characters are NOT valid
+JavaScript strings, and placing it into JavaScript will result in a
+parse error.
+
+If C<$enable> is true (or missing), then C<encode> will escape these
+strings as \u2028 and \u2029, rendering the string safe to include in
+JavaScript.
 
 =head2 indent_length
 
